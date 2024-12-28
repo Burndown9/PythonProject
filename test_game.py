@@ -3,7 +3,7 @@ Project Name: Test Game
 Project Author: Jacob Hayes
 Project Date: 27 Dec 2024
 
-Packages used: pygame
+Packages used: collections, os, pygame, random
 
 Credit and sincere thanks to:
 OpenGameArt.org
@@ -13,9 +13,10 @@ OpenGameArt.org
 """
 
 """IMPORTS"""
-import os               #for pathing purposes
-import pygame           #for handling game functionality
-import random           #for that delicious RNG
+from collections import deque   #for handling cascading merges
+import os                       #for pathing purposes
+import pygame                   #for handling game functionality
+import random                   #for that delicious RNG
 """"""
 
 """SETUP"""
@@ -83,6 +84,7 @@ class Item:
         return (
             isinstance(other, Item) and
             self.name == other.name and
+            self.level == other.level and
             self.level < len(self.icons)
         )
 
@@ -93,7 +95,7 @@ class Item:
 
     def get_icon(self):
         # Return the icon corresponding to the current level
-        print(f"Returning {self.icons[self.level-1]}")
+        #print(f"Returning {self.icons[self.level-1]}")
         return self.icons[self.level - 1]
 
 # Example: Defining a specific item
@@ -115,7 +117,7 @@ ITEM_CLASSES = {
 
 
 """FUNCTIONS"""
-# Helper function to draw the grid
+# Helper function to draw the grid and items
 def draw_grid():
     for row in range(GRID_SIZE):
         for col in range(GRID_SIZE):
@@ -124,28 +126,29 @@ def draw_grid():
             rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
             pygame.draw.rect(screen, GRID_COLOR, rect, 2)
 
-# Helper function to draw items in the grid
-def draw_items():
-    for row in range(GRID_SIZE):
-        for col in range(GRID_SIZE):
-            if grid[row][col] is not None:
-                item = grid[row][col]
+            item = grid[row][col]
+            if item:
                 x = col * CELL_SIZE + (SCREEN_WIDTH - GRID_SIZE * CELL_SIZE) // 2 + CELL_SIZE // 4
                 y = row * CELL_SIZE + (SCREEN_HEIGHT - GRID_SIZE * CELL_SIZE) // 2 + CELL_SIZE // 4
                 icon = item.get_icon()
                 if isinstance(icon, pygame.Surface):
-                    print(f"Blitting icon for {item.name} at level {item.level}")
+                    # print(f"Blitting icon for {item.name} at level {item.level}")
                     screen.blit(icon, (x, y))  # blit the Surface object
                 else:
                     print(f"Error: {item.name} at level {item.level} returned {icon}")
+
+
 
 # Function to spawn items
 def spawn_item():
     empty_cells = [(row, col) for row in range(GRID_SIZE) for col in range(GRID_SIZE) if grid[row][col] is None]
     if empty_cells:
         row, col = random.choice(empty_cells)
-        item_class = random.choices(list(ITEM_CLASSES.keys()), weights=ITEM_CLASSES.values())[0] #item types
-        grid[row][col] = item_class()
+        #item_class = random.choices(list(ITEM_CLASSES.keys()), weights=ITEM_CLASSES.values())[0] #item types
+        grid[row][col] = new_item = random.choice(list(ITEM_CLASSES.keys()))()
+        new_item.row = row
+        new_item.col = col
+        play_spawn_animation(screen, new_item)
 
 def get_neighbors(row, col):
     matches = []
@@ -160,26 +163,106 @@ def get_neighbors(row, col):
     return matches
 
 def check_and_merge(row, col):
-    item = grid[row][col]
-    if item is None:
-        print(f"Cell ({row}, {col}) is already empty.")
-        return
+    # Initialize a queue for cascading merges
+    merge_queue = deque([(row, col)])
 
-    print(f"Checking for merge on {item.name} at ({row}, {col}).")
+    while merge_queue:
+        current_row, current_col = merge_queue.popleft()
+        item = grid[current_row][current_col]
 
-    neighbors = get_neighbors(row, col)
-    print(f"Found {len(neighbors)} neighbors: {neighbors}")
+        if item is None:
+            continue #skip empty cells
 
-    if len(neighbors) >= 2:
-        print(f"Merging {item.name} at ({row}, {col}) with neighbors.")
 
-        item.merge()
-        print(f"{item.name} upgraded to level {item.level}.")
+        print(f"Checking for merge on {item.name} at ({row}, {col}).")
 
+        neighbors = get_neighbors(row, col)
+        print(f"Found {len(neighbors)} neighbors: {neighbors}")
+
+        if len(neighbors) >= 2:
+            play_merge_animation(screen, item, neighbors)
+            print(f"Merging {item.name} at ({row}, {col}) with neighbors.")
+
+            item.merge()
+            print(f"{item.name} upgraded to level {item.level}.")
+
+            play_spawn_animation(screen, item)
+
+            #for each neighbor cell, clear and recheck
+            for n_row, n_col in neighbors:
+                print(f"Clearing neighbor at ({n_row}, {n_col}).")
+                grid[n_row][n_col] = None
+
+                # Add cleared cells to the queue for further checks (for respawning logic)
+                merge_queue.append((n_row, n_col))
+
+            # Recheck the current cell after upgrading
+            merge_queue.append((current_row, current_col))
+
+def play_merge_animation(screen, item, neighbors):
+    animation_duration = 300  # in milliseconds
+    frames = 30
+    clock = pygame.time.Clock()
+
+    # Calculate the animation steps
+    shrink_factor = 0.8
+    scale_steps = [(1 - shrink_factor) / frames * i + shrink_factor for i in range(frames)]
+
+    # remove the item from the grid temporarily
+    grid[item.row][item.col] = None
+
+    for scale in scale_steps:
+        screen.fill(BACKGROUND_COLOR)  # Redraw the screen to clear previous frame
+
+        #redraw the grid
+        draw_grid()
+
+        # Draw the merging item with shrinking effect
+        item_icon = pygame.transform.scale(item.get_icon(), (int(CELL_SIZE * scale), int(CELL_SIZE * scale)))
+        item_rect = item_icon.get_rect(center=((item.col + 0.5) * CELL_SIZE, (item.row + 0.5) * CELL_SIZE))
+        screen.blit(item_icon, item_rect)
+
+        # Draw the neighbors with shrinking effect
         for n_row, n_col in neighbors:
-            print(f"Clearing neighbor at ({n_row}, {n_col}).")
-            grid[n_row][n_col] = None
+            neighbor = grid[n_row][n_col]
+            if neighbor:
+                neighbor_icon = pygame.transform.scale(neighbor.get_icon(), (int(CELL_SIZE * scale), int(CELL_SIZE * scale)))
+                neighbor_rect = neighbor_icon.get_rect(center=((n_col + 0.5) * CELL_SIZE, (n_row + 0.5) * CELL_SIZE))
+                screen.blit(neighbor_icon, neighbor_rect)
 
+        pygame.display.flip()
+        clock.tick(frames // (animation_duration / 1000))
+
+        
+    # return the item to the grid
+    grid[item.row][item.col] = item
+
+
+def play_spawn_animation(screen, item):
+    animation_duration = 200  # in milliseconds
+    frames = 20
+    clock = pygame.time.Clock()
+
+    #remove the item from the grid temporarily
+    grid[item.row][item.col] = None
+
+    for i in range(frames):
+        scale = (i + 1) / frames
+        screen.fill(BACKGROUND_COLOR)  # Clear screen for animation
+
+        #redraw the grid
+        draw_grid()
+
+        # Draw the item with growing effect
+        item_icon = pygame.transform.scale(item.get_icon(), (int(CELL_SIZE * scale), int(CELL_SIZE * scale)))
+        item_rect = item_icon.get_rect(center=((item.col + 0.5) * CELL_SIZE, (item.row + 0.5) * CELL_SIZE))
+        screen.blit(item_icon, item_rect)
+
+        pygame.display.flip()
+        clock.tick(frames // (animation_duration / 1000))
+
+    #return the item to the grid
+    grid[item.row][item.col] = item
 
 """GAME LOOP"""
 # Game loop
@@ -200,7 +283,6 @@ while running:
 
     # Draw grid and items
     draw_grid()
-    draw_items()
 
     # Update screen
     pygame.display.flip()
