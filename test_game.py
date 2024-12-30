@@ -219,21 +219,23 @@ def play_merge_animation(screen, item, neighbors):
 
         # Draw the merging item with shrinking effect
         item_icon = pygame.transform.scale(item.get_icon(), (int(CELL_SIZE * scale), int(CELL_SIZE * scale)))
-        item_rect = item_icon.get_rect(center=((item.col + 0.5) * CELL_SIZE, (item.row + 0.5) * CELL_SIZE))
+        item_rect = item_icon.get_rect(center=((item.col + 1) * CELL_SIZE, (item.row + 0.5) * CELL_SIZE))
         screen.blit(item_icon, item_rect)
 
         # Draw the neighbors with shrinking effect
+        """
         for n_row, n_col in neighbors:
             neighbor = grid[n_row][n_col]
             if neighbor:
                 neighbor_icon = pygame.transform.scale(neighbor.get_icon(), (int(CELL_SIZE * scale), int(CELL_SIZE * scale)))
                 neighbor_rect = neighbor_icon.get_rect(center=((n_col + 0.5) * CELL_SIZE, (n_row + 0.5) * CELL_SIZE))
                 screen.blit(neighbor_icon, neighbor_rect)
+        """
 
         pygame.display.flip()
         clock.tick(frames // (animation_duration / 1000))
 
-        
+
     # return the item to the grid
     grid[item.row][item.col] = item
 
@@ -255,7 +257,7 @@ def play_spawn_animation(screen, item):
 
         # Draw the item with growing effect
         item_icon = pygame.transform.scale(item.get_icon(), (int(CELL_SIZE * scale), int(CELL_SIZE * scale)))
-        item_rect = item_icon.get_rect(center=((item.col + 0.5) * CELL_SIZE, (item.row + 0.5) * CELL_SIZE))
+        item_rect = item_icon.get_rect(center=((item.col+1) * CELL_SIZE, (item.row+0.5) * CELL_SIZE))
         screen.blit(item_icon, item_rect)
 
         pygame.display.flip()
