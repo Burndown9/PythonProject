@@ -25,8 +25,11 @@ pygame.init()
 
 # Screen dimensions
 SCREEN_WIDTH, SCREEN_HEIGHT = 800, 640
-GRID_SIZE = 5  # 5x5 grid
+GRID_SIZE, GRID_WIDTH, GRID_HEIGHT = 5,5,5  # 5x5 grid
 CELL_SIZE = 128  # Size of each cell
+GRID_OFFSET_X = (SCREEN_WIDTH - GRID_WIDTH * CELL_SIZE) // 2
+GRID_OFFSET_Y = (SCREEN_HEIGHT - GRID_HEIGHT * CELL_SIZE) // 2
+
 
 # Colors
 BACKGROUND_COLOR = (50, 50, 50)
@@ -39,6 +42,11 @@ pygame.display.set_caption("Merge Game")
 
 # Create grid positions
 grid = [[None for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+
+# drag variables
+dragging_item = None  # The item being dragged
+drag_start_pos = None  # The grid position it started from
+mouse_offset = (0, 0)  # Offset between the mouse and the item's top-left corner
 
 
 #preload all icons
@@ -121,21 +129,27 @@ ITEM_CLASSES = {
 def draw_grid():
     for row in range(GRID_SIZE):
         for col in range(GRID_SIZE):
-            x = col * CELL_SIZE + (SCREEN_WIDTH - GRID_SIZE * CELL_SIZE) // 2
-            y = row * CELL_SIZE + (SCREEN_HEIGHT - GRID_SIZE * CELL_SIZE) // 2
+            x = col * CELL_SIZE + GRID_OFFSET_X
+            y = row * CELL_SIZE + GRID_OFFSET_Y
             rect = pygame.Rect(x, y, CELL_SIZE, CELL_SIZE)
             pygame.draw.rect(screen, GRID_COLOR, rect, 2)
 
             item = grid[row][col]
             if item:
-                x = col * CELL_SIZE + (SCREEN_WIDTH - GRID_SIZE * CELL_SIZE) // 2 + CELL_SIZE // 4
-                y = row * CELL_SIZE + (SCREEN_HEIGHT - GRID_SIZE * CELL_SIZE) // 2 + CELL_SIZE // 4
+                x = col * CELL_SIZE + GRID_OFFSET_X + CELL_SIZE // 4
+                y = row * CELL_SIZE + GRID_OFFSET_Y + CELL_SIZE // 4
                 icon = item.get_icon()
                 if isinstance(icon, pygame.Surface):
                     # print(f"Blitting icon for {item.name} at level {item.level}")
                     screen.blit(icon, (x, y))  # blit the Surface object
                 else:
                     print(f"Error: {item.name} at level {item.level} returned {icon}")
+
+    #draw dragging item
+    if dragging_item:
+        mouse_x, mouse_y = find_mouse_xy()[0], find_mouse_xy()[1]
+        item_icon = pygame.transform.scale(dragging_item.get_icon(), (CELL_SIZE, CELL_SIZE))
+        screen.blit(item_icon, (mouse_x - mouse_offset[0], mouse_y - mouse_offset[1]))
 
 
 
@@ -266,19 +280,69 @@ def play_spawn_animation(screen, item):
     #return the item to the grid
     grid[item.row][item.col] = item
 
+def find_mouse_xy():
+    mouse_x, mouse_y = pygame.mouse.get_pos()
+    col = (mouse_x - GRID_OFFSET_X) // CELL_SIZE
+    row = (mouse_y - GRID_OFFSET_Y) // CELL_SIZE
+
+    return mouse_x, mouse_y, col, row
+
+
 """GAME LOOP"""
 # Game loop
 running = True
 while running:
     for event in pygame.event.get():
+        #quit
         if event.type == pygame.QUIT:
             running = False
+
+        #keypress
         elif event.type == pygame.KEYDOWN: #any keypress
             spawn_item()
-
             for row in range(GRID_SIZE):
                 for col in range(GRID_SIZE):
                     check_and_merge(row, col)
+
+        #start left click
+        elif event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left mouse button
+                #find the correctly offset coordinates and row
+                mouse_x, mouse_y, col, row = find_mouse_xy()
+                print(f"Mouse click detected at {mouse_x}, {mouse_y} in cell {col}, {row}")
+
+                if 0 <= row < GRID_SIZE and 0 <= col < GRID_SIZE:
+                    if grid[row][col] is not None:  # There's an item here
+                        dragging_item = grid[row][col]
+                        drag_start_pos = (row, col)
+                        mouse_offset = (
+                            mouse_x - GRID_OFFSET_X + col * CELL_SIZE,
+                            mouse_y - GRID_OFFSET_Y + row * CELL_SIZE
+                        )
+                        grid[row][col] = None  # Temporarily remove the item from the grid
+            elif event.button == 2: #right click
+                mouse_x, mouse_y, col, row = find_mouse_xy()
+                print(f"find_mouse_xy() found the mouse at {mouse_x}, {mouse_y} in cell {col}, {row}")
+        #release left click
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button == 1 and dragging_item is not None:  # Left mouse button release
+                # find the correctly offset coordinates and row
+                mouse_x, mouse_y, col, row = find_mouse_xy()
+                # Drop the item
+                if 0 <= row < GRID_SIZE and 0 <= col < GRID_SIZE:
+                    if grid[row][col] is None:  # Empty cell
+                        grid[row][col] = dragging_item
+                        print(f"dropped item at {grid[row]}, {grid[col]}")
+                        #check for merges on this and on neighbors
+                        check_and_merge(row, col)
+                        for neighbor in get_neighbors(row, col):
+                            check_and_merge(neighbor[0], neighbor[1])
+                    else:  # Cell occupied, return item to original position
+                        grid[drag_start_pos[0]][drag_start_pos[1]] = dragging_item
+                        print(f"dropped item at {grid[drag_start_pos[0]]}, {grid[drag_start_pos[1]]}")
+
+                dragging_item = None  # Clear drag state
+
 
     # Clear screen
     screen.fill(BACKGROUND_COLOR)
